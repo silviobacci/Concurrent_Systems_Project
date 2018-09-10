@@ -1,0 +1,183 @@
+/********************************************************************************************************/
+/*********************************** IMPLEMENTATION MODEL ***********************************************/
+/********************************************************************************************************/
+
+/**************************************** VARIABLES *****************************************************/
+const Nthread = 3 // number of threads that share the object
+range Rthread = 1..Nthread // range og the number of threads
+const Ncond = 5 // number of condition variables
+const Imax = 11 // a maximum value of the variable state
+range Rcond = 1..Ncond
+set ThreadsA={t[1], t[2]}
+set ThreadsB={t[3]}
+set Threads={ThreadsA, ThreadsB}
+range Int = 0..Imax //set of thread indentifiers
+set Cond={c[j:Rcond]} //set of condition indentifiers
+/********************************************************************************************************/
+
+/**************************************** ALPHABETS *****************************************************/
+set VarAlphabet = {read[Int], write[Int], inc, dec}
+
+set LockAlphabet = {lock, unlock}
+
+set WaitAlphabet = {await, endawait}
+set NotifyAlphabet = {signal, signalAll}
+set ConditionAlphabet = {NotifyAlphabet, WaitAlphabet}
+set ManagerAlphabet = {acquire_a, acquire_b, endacquire_a, endacquire_b, release}
+
+set ThreadAlphabet = {ManagerAlphabet}
+/********************************************************************************************************/
+
+/******************************************** LOCK ******************************************************/
+LOCK = (lock -> unlock -> LOCK).
+/********************************************************************************************************/
+
+/****************************************** INTEGER *****************************************************/
+INT(I=0)=VAR[I],
+VAR[v:Int]=(read[v] ->VAR[v] | write[w:Int]-> VAR[w] | when(v<Imax) inc-> VAR[v+1] | when(v>0) dec->VAR[v-1]).
+/********************************************************************************************************/
+
+/**************************************** CONDITION *****************************************************/
+CONDITION = EMPTY,
+EMPTY = (await -> WAIT[1] | {signal, signalAll}->EMPTY),
+WAIT[i:Rthread] = (when (i<Nthread) await -> WAIT[i+1] | signal -> endawait -> if(i==1)then EMPTY else WAIT[i-1] | signalAll->LOOP[i]),
+LOOP[i:Rthread] =(endawait->if(i==1) then EMPTY else LOOP[i-1]).
+
+AWAIT(I=1)= (c[I].await -> unlock -> c[I].endawait -> lock ->END).
+SIGNAL(I=1)= (c[I].signal->END).
+SIGNALALL(I=1) = (c[I]. signalAll->END).
+
+||SIGNAL_AND_CONTINUE(C=Ncond) = (forall[i:1..C] c[i]:CONDITION).
+/********************************************************************************************************/
+
+/**************************************** IMPLEMENTATION ************************************************/
+EXIT=(unlock -> END).
+
+/******************************************* ACQUIRE_A **************************************************/
+ACQUIRE_A = (lock -> WHILE),
+WHILE=(state.read[v:Int]-> if(v==1||v==2||v==3||v==4||v==6||v==8||v==11)then AWAIT(1);WHILE else CONTINUE),
+CONTINUE=(acquire_a->state.read[i:Int]-> 	if(i==0) 
+												then (state.write[1]->NEXT_REQUEST_A_1;END)
+											else if(i==5)
+												then (state.write[6]->NEXT_REQUEST_A_2;END)
+											else if(i==7)
+												then (state.write[8]->NEXT_REQUEST_A_3;END)
+											else if(i==9)
+												then (state.write[10]->NEXT_REQUEST_A_4;END)
+											else 
+												(state.write[11]->NEXT_REQUEST_A_3;END))+
+{state.VarAlphabet, c[Rcond].ConditionAlphabet}.
+
+NEXT_REQUEST_A_1= SIGNALALL(3);EXIT;END.
+NEXT_REQUEST_A_2= SIGNALALL(2);SIGNALALL(5);EXIT;END.
+NEXT_REQUEST_A_3= SIGNALALL(5);EXIT;END.
+NEXT_REQUEST_A_4= SIGNALALL(1);SIGNALALL(5);EXIT;END.
+/********************************************************************************************************/
+
+
+/******************************************* ACQUIRE_B **************************************************/
+ACQUIRE_B = (lock -> WHILE),
+WHILE=(state.read[v:Int]-> if(v==1||v==2||v==3||v==4||v==7||v==8||v==9||v==10||v==11)then AWAIT(2);WHILE else CONTINUE),
+CONTINUE=(acquire_b->state.read[i:Int]-> 	if(i==0) 
+												then (state.write[3]->NEXT_REQUEST_B_1;END)
+											else if(i==5)
+												then (state.write[7]->NEXT_REQUEST_B_2;END)
+											else 
+												(state.write[8]->NEXT_REQUEST_B_3;END))+
+{state.VarAlphabet, c[Rcond].ConditionAlphabet}.
+
+NEXT_REQUEST_B_1= SIGNALALL(4);EXIT;END.
+NEXT_REQUEST_B_2= SIGNALALL(1);SIGNALALL(5);EXIT;END.
+NEXT_REQUEST_B_3= SIGNALALL(5);EXIT;END.
+/********************************************************************************************************/
+
+/**************************************** ENDACQUIRE_A **************************************************/
+ENDACQUIRE_A = (lock -> WHILE),
+WHILE=(state.read[v:Int]-> if(v==0||v==3||v==4||v==5||v==6||v==7||v==8||v==9||v==10||v==11)then AWAIT(3);WHILE else CONTINUE),
+CONTINUE=(endacquire_a->state.read[i:Int]-> 	if(i==1) 
+													then (state.write[5]->NEXT_ENDREQUEST_A_1;END)
+												else 
+													(state.write[6]->NEXT_ENDREQUEST_A_2;END))+
+{state.VarAlphabet, c[Rcond].ConditionAlphabet}.
+
+NEXT_ENDREQUEST_A_1= SIGNALALL(1);SIGNALALL(2);SIGNALALL(5);EXIT;END.
+NEXT_ENDREQUEST_A_2= SIGNALALL(2);SIGNALALL(5);EXIT;END.
+/********************************************************************************************************/
+
+/**************************************** ENDACQUIRE_B **************************************************/
+ENDACQUIRE_B = (lock -> WHILE),
+WHILE=(state.read[v:Int]-> if(v==0||v==1||v==2||v==5||v==6||v==7||v==8||v==9||v==10||v==11)then AWAIT(4);WHILE else CONTINUE),
+CONTINUE=(endacquire_b->state.read[i:Int]-> 	if(i==3) then 
+													(state.write[9]->NEXT_ENDREQUEST_B_1;END)
+												else 
+													(state.write[10]->NEXT_ENDREQUEST_B_1;END))+
+{state.VarAlphabet, c[Rcond].ConditionAlphabet}.
+
+NEXT_ENDREQUEST_B_1= SIGNALALL(1);SIGNALALL(5);EXIT;END.
+/********************************************************************************************************/
+
+/******************************************* RELEASE ****************************************************/
+RELEASE = (lock -> WHILE),
+WHILE=(state.read[v:Int]-> if(v==1||v==2||v==3||v==4)then AWAIT(5);WHILE else CONTINUE),
+CONTINUE=(release->state.read[i:Int]-> 		if(i==0) then 
+												(state.write[0]->NEXT_RELEASE_1;END)
+											else if(i==5)
+												then (state.write[0]->NEXT_RELEASE_1;END)
+											else if(i==6)
+												then (state.write[1]->NEXT_RELEASE_2;END)
+											else if(i==7)
+												then (state.write[3]->NEXT_RELEASE_3;END)
+											else if(i==8)
+												then (state.write[4]->NEXT_RELEASE_3;END)
+											else if(i==9)
+												then (state.write[0]->NEXT_RELEASE_1;END)
+											else if(i==10)
+												then (state.write[1]->NEXT_RELEASE_2;END)
+											else 
+												(state.write[2]->NEXT_RELEASE_2;END))+
+{state.VarAlphabet, c[Rcond].ConditionAlphabet}.
+
+NEXT_RELEASE_1= SIGNALALL(1);SIGNALALL(2);SIGNALALL(5);EXIT;END.
+NEXT_RELEASE_2= SIGNALALL(3);EXIT;END.
+NEXT_RELEASE_3= SIGNALALL(4);EXIT;END.
+/********************************************************************************************************/
+/********************************************************************************************************/
+
+/**************************************** THREADS *******************************************************/
+USE = (use -> END).
+
+THREAD_A=ACQUIRE_A;ENDACQUIRE_A;USE;RELEASE;THREAD_A + ThreadAlphabet.
+THREAD_B=ACQUIRE_B;ENDACQUIRE_B;USE;RELEASE;THREAD_B + ThreadAlphabet.
+/********************************************************************************************************/
+
+||IMPLEMENTATION_MODEL=({t[1],t[2]}:THREAD_A|| t[3]:THREAD_B|| Threads::LOCK || Threads::state:INT(0) || Threads::SIGNAL_AND_CONTINUE).
+
+/**************************************** VERIFICATION **************************************************/
+property COND_SPEC  = (	ThreadsA.acquire_a -> ENDACQUIRE_A[0] | 
+						ThreadsB.acquire_b -> ENDACQUIRE_B[0] | 
+						Threads.release -> COND_SPEC
+					  ),
+
+ENDACQUIRE_A[i:0..1] = (ThreadsA.endacquire_a -> ACQUIRE_A[i]),
+
+ENDACQUIRE_B[i:0..1] = (ThreadsB.endacquire_b -> ACQUIRE_B[i]),
+
+ACQUIRE_A[i:0..3] =	(	when(i<3) ThreadsA.acquire_a -> ACQUIRE_A[i+1] | 
+						when(i<2) ThreadsB.acquire_b -> ACQUIRE_A[i+2] | 
+						Threads.release -> 	if (i == 0) 
+												then COND_SPEC 
+											else if (i == 1) 
+												then ENDACQUIRE_A[i-1] 
+											else 
+												ENDACQUIRE_B[i-2]
+					),
+
+ACQUIRE_B[i:0..2] =	(	when (i<2) ThreadsA.acquire_a -> ACQUIRE_B[i+1] | 
+						Threads.release -> 	if ( i == 0 ) 
+												then COND_SPEC 
+											else 
+												ENDACQUIRE_A[i-1]
+					).
+
+||TEST = (IMPLEMENTATION_MODEL || COND_SPEC).
+/********************************************************************************************************/

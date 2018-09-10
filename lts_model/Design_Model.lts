@@ -1,0 +1,66 @@
+/********************************************************************************************************/
+/**************************************** DESIGN MODEL **************************************************/
+/********************************************************************************************************/
+
+
+/*********************************** VARIABLES AND ALPHABETS ********************************************/
+set ThreadsA={t[1], t[2]}
+set ThreadsB={t[3]}
+set Threads={ThreadsA, ThreadsB}
+
+set ManagerAlphabet = {acquire_a, acquire_b, endacquire_a,  endacquire_b, release}
+/********************************************************************************************************/
+
+/****************************************** THREADS *****************************************************/
+PROC_A = (acquire_a -> endacquire_a -> use -> release -> PROC_A) + ManagerAlphabet.
+PROC_B = (acquire_b -> endacquire_b -> use -> release -> PROC_B) + ManagerAlphabet.
+/********************************************************************************************************/
+
+/************************************** RESOURCE MANAGER ************************************************/
+RESOURCE_MANAGER = 	(	acquire_a -> ENDACQUIRE_A[0] | 
+						acquire_b -> ENDACQUIRE_B[0] | 
+						release -> RESOURCE_MANAGER
+					),
+
+ENDACQUIRE_A[i:0..1] = (endacquire_a -> ACQUIRE_A[i]),
+
+ENDACQUIRE_B[i:0..1] = (endacquire_b -> ACQUIRE_B[i]),
+
+ACQUIRE_A[i:0..3] =	(	when(i<3) acquire_a -> ACQUIRE_A[i+1] | 
+						when(i<2) acquire_b -> ACQUIRE_A[i+2] | 
+						release -> 	if (i == 0) 
+										then RESOURCE_MANAGER 
+									else 
+										if (i == 1) 
+											then ENDACQUIRE_A[i-1] 
+										else 
+											ENDACQUIRE_B[i-2]
+					),
+
+ACQUIRE_B[i:0..2] =	(	when (i<2) acquire_a -> ACQUIRE_B[i+1] | 
+						release -> 	if ( i == 0 ) 
+										then RESOURCE_MANAGER 
+									else 
+										ENDACQUIRE_A[i-1]
+					).
+/********************************************************************************************************/
+
+||DESIGN_MODEL = (ThreadsA:PROC_A || ThreadsB:PROC_B || Threads::RESOURCE_MANAGER).
+
+/************************************************ TRANSLATION *******************************************/
+RESOURCE_MANAGER_EXTENDED = (acquire_a -> ENDACQUIRE_A[0] | acquire_b -> ENDACQUIRE_B[0] | release -> RESOURCE_MANAGER_EXTENDED),
+
+ENDACQUIRE_A[0] = (endacquire_a -> ACQUIRE_A[0]),
+ENDACQUIRE_A[1] = (endacquire_a -> ACQUIRE_A[1]),
+ENDACQUIRE_B[0] = (endacquire_b -> ACQUIRE_B[0]),
+ENDACQUIRE_B[1] = (endacquire_b -> ACQUIRE_B[1]),
+
+ACQUIRE_A[0] = (acquire_a -> ACQUIRE_A[1] | acquire_b -> ACQUIRE_A[2] | release -> RESOURCE_MANAGER_EXTENDED),
+ACQUIRE_A[1] = (acquire_b -> ACQUIRE_A[3] | release -> ENDACQUIRE_A[0]),
+ACQUIRE_A[2] = (acquire_a -> ACQUIRE_A[3] | release -> ENDACQUIRE_B[0]),
+ACQUIRE_A[3] = (release -> ENDACQUIRE_B[1]),
+
+ACQUIRE_B[0] = (acquire_a -> ACQUIRE_B[1] | release -> RESOURCE_MANAGER_EXTENDED), 
+ACQUIRE_B[1] = (acquire_a -> ACQUIRE_B[2] | release -> ENDACQUIRE_A[0]), 
+ACQUIRE_B[2] = (release -> ENDACQUIRE_A[1]).
+/********************************************************************************************************/
